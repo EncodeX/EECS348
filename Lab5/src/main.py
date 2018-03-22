@@ -46,7 +46,7 @@ def f_score(filename, predict):
     tn = 0
     fn = 0
     for i in range(len(actual)):
-        print (predict[i], actual[i])
+        # print (predict[i], actual[i])
         if predict[i] == '5' and actual[i] == '5':
             tp = tp + 1
         if predict[i] == '5' and actual[i] == '1':
