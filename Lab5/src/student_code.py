@@ -9,6 +9,7 @@ class Bayes_Classifier:
     dictionary = {}
     f_dict = [{}, {}]
     f_proportion = []
+    idf_dict = {}
     word_score_dict = [{}, {}]
     score_count = [0, 0]
 
@@ -50,15 +51,20 @@ class Bayes_Classifier:
                 if word in self.stop_words:
                     continue
                 n_w = word
-                n_w = 'ss'.join(n_w.rsplit('sses', 1))
-                n_w = 'i'.join(n_w.rsplit('ies', 1))
-                n_w = 'ss'.join(n_w.rsplit('ss', 1))
-                n_w = ''.join(n_w.rsplit('s', 1))
-                if len(n_w) > 6:
+                if n_w[-4:] == 'sses':
+                    n_w = 'ss'.join(n_w.rsplit('sses', 1))
+                if n_w[-3:] == 'ies':
+                    n_w = 'i'.join(n_w.rsplit('ies', 1))
+                if n_w[-2:] == 'ss':
+                    n_w = 'ss'.join(n_w.rsplit('ss', 1))
+                if n_w[-1:] == 's':
+                    n_w = ''.join(n_w.rsplit('s', 1))
+                if len(n_w) > 6 and n_w[-5:] == 'ement':
                     ''.join(n_w.rsplit('ement', 1))
                 sentences.append(n_w)
             doc.append(sentences)                      # document sentences
-            result.append(doc)
+            if len(doc) > 0:
+                result.append(doc)
 
         return result
 
@@ -69,7 +75,7 @@ class Bayes_Classifier:
         # Read File into [document:[sentence]]
         self.train_new(filename)
 
-    def add_word(self, word, doc):
+    def add_word(self, word, doc, dup_set):
         if self.dictionary.has_key(word):
             self.dictionary[word][0] = self.dictionary[word][0] + 1
             if doc[1] == 0:
@@ -78,14 +84,19 @@ class Bayes_Classifier:
                 self.dictionary[word][1][1] += 1
         else:
             if doc[1] == 0:
-                self.dictionary[word] = [1, [1, 0]]
+                self.dictionary[word] = [1, [1, 0], 0]
             else:
-                self.dictionary[word] = [1, [0, 1]]
+                self.dictionary[word] = [1, [0, 1], 0]
         if self.f_dict[doc[1]].has_key(word):
             self.f_dict[doc[1]][word] += 1
         else:
             self.f_dict[doc[1]][word] = 1
         self.score_count[doc[1]] = self.score_count[doc[1]] + 1
+
+        if word not in dup_set:
+            self.dictionary[word][2] += 1
+
+        return dup_set
 
     def train_new(self, filename):
         # Read File into [document:[sentence]]
@@ -94,8 +105,9 @@ class Bayes_Classifier:
         # We want P(wj | f0) & P(wj | f1)
         # So we count which words are in f0, and which are in f1
         for doc in self.train_docs:
+            dup_set = set([])
             for word in doc[2]:
-                self.add_word(word, doc)
+                dup_set = self.add_word(word, doc, dup_set)
             # for i in range(len(doc[2]) - 1):
             #     self.add_word(doc[2][i] + doc[2][i + 1], doc)
             # for i in range(len(doc[2]) - 2):
@@ -110,14 +122,23 @@ class Bayes_Classifier:
             math.log10(self.score_count[1]) if self.score_count[1] != 0 else 1 -
             math.log10(words_count + len(self.f_dict[1])))    # P(f1)
 
+        docs_length = float(len(self.train_docs))
+
         f0_total = self.score_count[0] + len(self.f_dict[0])
         f1_total = self.score_count[1] + len(self.f_dict[1])
         for word, wordInfo in self.dictionary.iteritems():
             f0 = wordInfo[1][0] + 1     # count(wj, f0)
             f1 = wordInfo[1][1] + 1     # count(wj, f1)
-            self.word_score_dict[0][word] = math.log10(f0) - math.log10(f0_total)
-            self.word_score_dict[1][word] = math.log10(f1) - math.log10(f1_total)
+            self.word_score_dict[0][word] = math.log10(
+                f0) - math.log10(f0_total)
+            self.word_score_dict[1][word] = math.log10(
+                f1) - math.log10(f1_total)
+            self.idf_dict[word] = math.log10(docs_length) - \
+                math.log10(wordInfo[2])
+            # if docs_length / 5 > wordInfo[2]:
+            #     print(docs_length, wordInfo[2], word, self.idf_dict[word])
 
+        # print(self.idf_dict)
 
     def train_old(self, filename):
         # code to be completed by students to extract features from
@@ -178,16 +199,28 @@ class Bayes_Classifier:
         # classes with '5' = positive and '1' = negative
         result = []
         test_docs = self.read_file(filename)
+
         for doc in test_docs:
+            doc_dict = {}
+            for word in doc[2]:
+                if doc_dict.has_key(word):
+                    doc_dict[word] += 1
+                else:
+                    doc_dict[word] = 1
             doc_f0 = self.f_proportion[0]
             doc_f1 = self.f_proportion[1]
             for word in doc[2]:
                 if self.dictionary.has_key(word):
-                    doc_f0 += self.word_score_dict[0][word]
-                    doc_f1 += self.word_score_dict[1][word]
+                    doc_f0 += self.word_score_dict[0][word] + \
+                        math.log10(doc_dict[word]) - math.log10(len(doc[2])) + \
+                        self.idf_dict[word]
+                    doc_f1 += self.word_score_dict[1][word] + \
+                        math.log10(doc_dict[word]) - math.log10(len(doc[2])) + \
+                        self.idf_dict[word]
             # for i in range(len(doc[2]) - 1):
             #     word = doc[2][i] + doc[2][i + 1]
             #     if self.dictionary.has_key(word):
+            #         # print("has bigram word: ", word)
             #         doc_f0 += self.word_score_dict[0][word]
             #         doc_f1 += self.word_score_dict[1][word]
             # for i in range(len(doc[2]) - 2):
